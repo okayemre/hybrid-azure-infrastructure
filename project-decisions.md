@@ -37,6 +37,11 @@ the **why**, not just the **what**.
 - 🧠 **Context:** Modern RBAC-based authorization instead of legacy access policies — current Azure best practice.
 - ⚠️ **Trade-off:** None significant — RBAC is the recommended path going forward.
 
+### Test user & OU structure
+- ✅ **Decision:** Created OU `HybridLab-Staff` with one test user representing a standard employee account.
+- 🧠 **Context:** Demonstrates hybrid identity — this account will sync to Azure AD via Entra Connect in Milestone D.
+- ⚠️ **Trade-off:** None — exists purely for demonstration.
+
 ---
 
 ## 🏗️ Architecture Strategy
@@ -47,12 +52,26 @@ the **why**, not just the **what**.
 - ⚠️ **Trade-off:** VPN setup isn't reproducible via `terraform apply` — documented manually with screenshots instead.
 
 ### Project naming
-- ✅ **Decision:** App name `mrsblog`, environment `dev`.
-- 🧠 **Context:** Used consistently across resource names and Terraform variables.
+- ✅ **Decision:** App name `hybridlab`, environment `dev`.
+- 🧠 **Context:** Renamed from an earlier personal-name-based choice to something project-wide.
 
----
+### VM network mode
+- ✅ **Decision:** On-prem VM network adapter set to Bridged (not NAT).
+- 🧠 **Context:** NAT causes double-NAT behind the home router, breaking VPN port forwarding needed for Milestone C.
+- ⚠️ **Trade-off:** VM shares the home network's broadcast domain — requires care with services like DHCP.
 
-<!--
-📌 Add new decisions below, under the relevant category header.
-Use the same format: ✅ Decision · 🧠 Context · ⚠️ Trade-off
--->
+### Static IP for domain controller
+- ✅ **Decision:** SRV-DC01 assigned static IP `192.168.0.15`, excluded from the router's DHCP pool.
+- 🧠 **Context:** AD DS, DNS, and DHCP configuration all depend on a stable DC address. The chosen IP falls within the router's DHCP range (`.2`–`.253`), so an explicit exclusion/reservation was added on the router to prevent conflicts.
+- ⚠️ **Trade-off:** One extra manual step on the router, outside this project's own documentation surface.
+
+### Forest & domain name
+- ✅ **Decision:** New forest, root domain `hybridlab.local`. NetBIOS name `HYBRIDLAB`.
+- 🧠 **Context:** First domain controller in the environment; name reflects the project, not an individual.
+- ⚠️ **Trade-off:** `.local` isn't publicly routable — Entra Connect will need an alternate UPN suffix later (Milestone D).
+
+### DHCP scope
+- ✅ **Decision:** Scope `192.168.0.100`–`192.168.0.150` created and authorized, left inactive.
+- 🧠 **Context:** The home router's DHCP pool covers nearly the whole subnet, leaving no safe range to avoid conflicts.
+- ⚠️ **Trade-off:** Role and scope are documented but not actively leasing addresses.
+

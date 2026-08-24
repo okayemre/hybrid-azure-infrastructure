@@ -13,7 +13,8 @@
 - 4-week deep dive into real-world hybrid infrastructure patterns
 
 ### 📍 Status
-- Work in progress
+- Milestone B (On-Premises) complete — AD DS, DNS, DHCP configured
+- Next up: Milestone C (Hybrid Connectivity)
 - Every decision, with the reasoning behind it, lives in [`project-decisions.md`](./project-decisions.md)
 
 ### 🏗️ Architecture
@@ -60,7 +61,8 @@ hybrid-azure-infrastructure/
 - 4 Wochen intensiver Einblick in echte Hybrid-Infrastruktur-Patterns
 
 ### 📍 Status
-- In Bearbeitung
+- Milestone B (On-Premises) abgeschlossen — AD DS, DNS, DHCP konfiguriert
+- Als Nächstes: Milestone C (Hybrid Connectivity)
 - Jede Entscheidung inklusive Begründung steht in [`project-decisions.md`](./project-decisions.md)
 
 ### 🏗️ Architektur
