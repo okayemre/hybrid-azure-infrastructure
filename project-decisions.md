@@ -42,6 +42,31 @@ the **why**, not just the **what**.
 - 🧠 **Context:** Demonstrates hybrid identity — this account will sync to Azure AD via Entra Connect in Milestone D.
 - ⚠️ **Trade-off:** None — exists purely for demonstration.
 
+### Hybrid identity sync method: PHS vs PTA
+- ✅ **Decision:** Use Password Hash Synchronization (PHS) as the sign-in method for Microsoft Entra Connect.
+- 🧠 **Context:** PHS requires no additional on-prem agent and keeps working even if SRV-DC01 goes offline (last synced hash remains valid in the cloud). Pass-through Authentication (PTA) was considered but rejected for this project's scale — a single test user doesn't exercise PTA's main advantage (real-time on-prem policy enforcement).
+- ⚠️ **Trade-off:** Password hashes leave the on-prem environment (double-hashed, non-reversible). Not suitable for organizations with strict "credentials never leave on-prem" policies — PTA would be the answer there.
+
+### UPN suffix mismatch resolution
+- ✅ **Decision:** Added the tenant's default `*.onmicrosoft.com` domain as an alternative UPN suffix in on-prem AD, and updated the test user's UPN to use it instead of `@hybridlab.local`.
+- 🧠 **Context:** `hybridlab.local` is not a publicly verifiable domain, so Microsoft Entra ID rejects cloud sign-in for UPNs using that suffix. Adding a custom domain to the tenant was avoided to keep the setup free and simple.
+- ⚠️ **Trade-off:** The user's on-prem UPN no longer matches the AD domain name, which is a minor cosmetic inconsistency purely for demo purposes.
+
+### Sync scope: OU-based filtering
+- ✅ **Decision:** Configured Microsoft Entra Connect to sync only the `HybridLab-Staff` OU, not the full `hybridlab.local` domain.
+- 🧠 **Context:** Default and built-in AD objects (Domain Controllers, Builtin, Computers, etc.) have no business value in the cloud and would clutter Entra ID with noise.
+- ⚠️ **Trade-off:** Any future demo users must be created inside `HybridLab-Staff` (or its scope must be re-widened) to be synced.
+
+### IE Enhanced Security Configuration disabled on SRV-DC01
+- ✅ **Decision:** Temporarily disabled IE Enhanced Security Configuration for Administrators on SRV-DC01.
+- 🧠 **Context:** The Entra Connect installation wizard uses an embedded browser control to sign in to Microsoft Entra ID; IE ESC blocked `login.microsoftonline.com` by default, preventing sign-in.
+- ⚠️ **Trade-off:** Slightly reduces browser hardening on the server. Acceptable for a lab VM with no general web browsing use case.
+
+### Admin account for Entra Connect: dedicated cloud account vs MSA-linked Global Admin
+- ✅ **Decision:** Used a dedicated cloud-only Global Administrator account instead of the personal Microsoft account (MSA) originally used to create the tenant.
+- 🧠 **Context:** MSA-linked tenant owner accounts authenticate as external/guest-style identities from certain legacy tools' perspective, which Entra Connect's sign-in flow rejects (`AADSTS50020`).
+- ⚠️ **Trade-off:** None — this is best practice regardless; MSA-linked accounts shouldn't be used for ongoing admin operations anyway.
+
 ---
 
 ## 🏗️ Architecture Strategy
