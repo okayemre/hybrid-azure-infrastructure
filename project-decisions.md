@@ -47,7 +47,7 @@ the **why**, not just the **what**.
 ## 🏗️ Architecture Strategy
 
 ### Terraform vs. Portal split
-- ✅ **Decision:** Terraform manages the Landing Zone, AKS, Key Vault, ACR, and Log Analytics. The VPN Gateway and Site-to-Site connection are set up manually in the Portal.
+- ✅ **Decision:** Terraform manages the Landing Zone, AKS, Key Vault, ACR, and Log Analytics. The VPN Gateway and Point-to-Site connection are set up manually in the Portal.
 - 🧠 **Context:** Wizard-heavy, one-time-setup resources go through the Portal. Repeatable, code-managed resources go through Terraform.
 - ⚠️ **Trade-off:** VPN setup isn't reproducible via `terraform apply` — documented manually with screenshots instead.
 
@@ -75,3 +75,22 @@ the **why**, not just the **what**.
 - 🧠 **Context:** The home router's DHCP pool covers nearly the whole subnet, leaving no safe range to avoid conflicts.
 - ⚠️ **Trade-off:** Role and scope are documented but not actively leasing addresses.
 
+### VPN topology: Site-to-Site → Point-to-Site pivot
+- ✅ **Decision:** Use Point-to-Site (P2S) VPN instead of Site-to-Site (S2S).
+- 🧠 **Context:** The home ISP uses DS-Lite — no public IPv4 is available on the router's WAN interface, which S2S IPsec tunnels require. P2S initiates the connection outbound from SRV-DC01, so no public IPv4 or inbound port forwarding is needed.
+- ⚠️ **Trade-off:** P2S is a single-client tunnel from SRV-DC01, not a true network-to-network tunnel — only that server reaches Azure, not the full on-prem subnet automatically.
+
+### GatewaySubnet prerequisite (Landing Zone pulled forward)
+- ✅ **Decision:** Provisioned a minimal VNet with a `GatewaySubnet` via Terraform ahead of the full Milestone E Landing Zone scope.
+- 🧠 **Context:** Azure VPN Gateway hard-requires an existing VNet with a subnet named exactly `GatewaySubnet` — Milestone C depended on part of Milestone E.
+- ⚠️ **Trade-off:** Landing Zone work is split across two milestones, same pattern as the earlier ACR-before-AKS case.
+
+### P2S authentication method
+- ✅ **Decision:** Self-signed root/child certificate pair (Azure certificate auth), generated via PowerShell on SRV-DC01.
+- 🧠 **Context:** Basic Gateway SKU only supports certificate-based auth over SSTP — RADIUS/Azure AD auth require higher SKUs.
+- ⚠️ **Trade-off:** Manual certificate lifecycle (no auto-renewal, no revocation infrastructure) — acceptable for a single-client lab connection.
+
+### VPN Gateway SKU & teardown strategy
+- ✅ **Decision:** Basic SKU chosen for cost (~$0.04/hr vs. ~$0.19/hr for VpnGw1). Gateway and its Public IP deleted after a successful P2S connectivity test.
+- 🧠 **Context:** VPN Gateway bills hourly regardless of usage; no later milestone (D–K) functionally requires an active tunnel. Certificates, VNet, and GatewaySubnet remain in place for a quick re-provision if a live demo is needed later.
+- ⚠️ **Trade-off:** Re-provisioning takes ~30–45 minutes each time it's needed again — documented via screenshots instead of a persistently running resource.
