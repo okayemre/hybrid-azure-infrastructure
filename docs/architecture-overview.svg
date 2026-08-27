@@ -1,0 +1,69 @@
+<svg width="680" height="510" viewBox="0 0 680 510" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Hybrid Azure infrastructure overview</title>
+<desc>An on-premises domain controller connects via VPN and Entra Connect to an Azure landing zone containing three resource groups: Network, Workload, and Platform. The internet reaches the Workload region, and GitHub Actions deploys into the Platform region.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="0" y="0" width="680" height="510" fill="#FFFFFF"/>
+
+<!-- External actors -->
+<g>
+<rect x="280" y="30" width="110" height="44" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="335" y="52" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Internet</text>
+</g>
+
+<g>
+<rect x="445" y="24" width="160" height="56" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="525" y="42" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">GitHub Actions</text>
+<text x="525" y="60" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5F5E5A">CI/CD, OIDC login</text>
+</g>
+
+<!-- Arrows from external actors into the landing zone -->
+<line x1="335" y1="74" x2="335" y2="205" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="345" y="150" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5F5E5A">public ingress</text>
+
+<line x1="525" y1="80" x2="525" y2="205" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="540" y="150" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5F5E5A">build &amp; deploy</text>
+
+<!-- Azure landing zone (outer container) -->
+<g>
+<rect x="40" y="140" width="600" height="260" rx="20" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="60" y="168" text-anchor="start" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#27500A">Azure landing zone</text>
+<text x="60" y="186" text-anchor="start" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#3B6D11">Sweden Central</text>
+</g>
+
+<!-- Network resource group -->
+<g>
+<rect x="60" y="205" width="170" height="170" rx="12" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="145" y="235" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#085041">Network</text>
+<text x="145" y="253" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#0F6E56">VNet, 4 subnets</text>
+</g>
+
+<!-- Workload resource group -->
+<g>
+<rect x="250" y="205" width="170" height="170" rx="12" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="335" y="235" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#633806">Workload</text>
+<text x="335" y="253" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#854F0B">AKS + sample app</text>
+</g>
+
+<!-- Platform resource group -->
+<g>
+<rect x="440" y="205" width="170" height="170" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="525" y="235" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#3C3489">Platform</text>
+<text x="525" y="253" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#534AB7">Key Vault, ACR, logs</text>
+</g>
+
+<!-- On-prem connection -->
+<line x1="147" y1="410" x2="147" y2="375" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="160" y="395" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5F5E5A">VPN + Entra Connect sync</text>
+
+<!-- On-premises -->
+<g>
+<rect x="40" y="410" width="220" height="70" rx="12" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="150" y="435" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#712B13">SRV-DC01</text>
+<text x="150" y="458" text-anchor="middle" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#993C1D">On-prem domain controller</text>
+</g>
+</svg>
