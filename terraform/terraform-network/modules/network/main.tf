@@ -34,3 +34,31 @@ resource "azurerm_subnet_network_security_group_association" "functional" {
   subnet_id                 = azurerm_subnet.functional[each.key].id
   network_security_group_id = azurerm_network_security_group.functional[each.key].id
 }
+
+resource "azurerm_network_security_rule" "allow_http_workload" {
+  name                        = "allow-http-inbound"
+  priority                    = 100
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "80"
+  source_address_prefix       = "Internet"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.functional["workload"].name
+}
+
+resource "azurerm_network_security_rule" "allow_https_workload" {
+  name                        = "allow-https-inbound"
+  priority                    = 110
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "443"
+  source_address_prefix       = "Internet"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.functional["workload"].name
+}

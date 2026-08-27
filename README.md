@@ -33,9 +33,10 @@ Most real companies aren't "all cloud" or "all on-prem" — existing systems can
 | 🔌 | [Milestone C: Hybrid Connectivity](#milestone-c-hybrid-connectivity) | VNet, GatewaySubnet, Point-to-Site VPN | ✅ |
 | 🔐 | [Milestone D: Hybrid Identity](#milestone-d-hybrid-identity) | Entra Connect, PHS, UPN suffix | ✅ |
 | 🏗️ | [Milestone E: Landing Zone](#milestone-e-landing-zone) | Resource Groups, VNet subnets, NSGs | ✅ |
-| ☸️ | Milestone F: Workload (AKS) | Sample app on AKS | ⏳ |
-| 🔑 | Milestone G: Platform Services | Key Vault, ACR, Log Analytics | ⏳ |
-| 📊 | Milestone H–K: Governance & Extensions | Monitoring, Backup, Policy, Budget | ⏳ |
+| ☸️ | [Milestone F: Workload (AKS)](#milestone-f-workload-aks) | AKS, NGINX Ingress, sample app | ✅ |
+| 🔑 | [Milestone G: Platform Services](#milestone-g-platform-services) | Key Vault, ACR, Log Analytics | ✅ |
+| 📊 | [Milestone H: Monitoring](#milestone-h-monitoring) | Container Insights, alerts, Workbook | ✅ |
+| 💾 | Milestone I–K: Governance & Extensions | Backup, Policy, Budget | ⏳ |
 
 ## 🏗️ Infrastructure Overview
 
@@ -45,24 +46,35 @@ Most real companies aren't "all cloud" or "all on-prem" — existing systems can
 | AD Forest / Domain | hybridlab.local | NetBIOS `HYBRIDLAB`, OU `HybridLab-Staff` |
 | Hybrid Identity Sync | Microsoft Entra Connect | Password Hash Sync, OU-scoped |
 | Resource Group (Network) | `rg-hybridlab-network-dev` | Sweden Central |
-| Resource Group (Workload) | `rg-hybridlab-workload-dev` | Sweden Central, empty — pending Milestone F |
+| Resource Group (Workload) | `rg-hybridlab-workload-dev` | Sweden Central — AKS cluster deployed |
+| AKS Cluster | `aks-hybridlab-dev` | Azure CNI Overlay, 1× `Standard_D2s_v3` node, Manual node provisioning |
+| Ingress | NGINX Ingress Controller | Deployed via Helm, single shared public IP |
+| Terraform State (Workload) | `terraform-workload/` | Separate state (`workload-dev.tfstate`), reads network outputs via `terraform_remote_state` |
 | Resource Group (Platform) | `rg-hybridlab-platform-dev` | Sweden Central, empty — pending Milestone G |
 | Virtual Network | `vnet-hybridlab-dev` | `10.0.0.0/16` |
 | Subnets | GatewaySubnet · snet-ingress-dev · snet-platform-dev · snet-workload-dev | `10.0.255.0/27` · `10.0.0.0/24` · `10.0.1.0/24` · `10.0.16.0/20` |
 | Network Security Groups | nsg-ingress-dev · nsg-platform-dev · nsg-workload-dev | One-to-one with functional subnets |
+| Resource Group (Platform) | `rg-hybridlab-platform-dev` | Sweden Central — Key Vault, ACR, Log Analytics deployed |
+| Key Vault | `kv-hybridlab-dev-<suffix>` | RBAC authorization, public network access |
+| Container Registry | `acrhybridlabdev<suffix>` | Basic SKU, Managed Identity access (no admin credentials) |
+| Log Analytics Workspace | `log-hybridlab-dev` | PerGB2018, 30-day retention — receives AKS diagnostics |
+| Terraform State (Platform) | `terraform/terraform-platform/` | Separate state (`platform-dev.tfstate`), reads network + workload outputs |
+| Container Insights | `oms_agent` on AKS | MSI-based auth, Data Collection Rule + Endpoint wired to Log Analytics |
+| Monitor Action Group | `ag-hybridlab-dev` | Email receiver, shared target for both alert rules |
+| Alerts | `alert-aks-node-cpu-dev` · `alert-aks-pod-failures-dev` | Platform metric alert (node CPU) + Log Analytics scheduled query alert (pod failures) |
+| Workbook | AKS Monitoring - hybridlab-dev | Pod status distribution, node status — sourced from Log Analytics |
 
 ## 🗺️ Architecture Diagram
 
 ```mermaid
 flowchart TB
+    INET((Internet))
     subgraph OnPrem["On-Premises — VMware Workstation"]
         DC[SRV-DC01<br/>Windows Server 2025<br/>AD DS · DNS · DHCP]
     end
-
     subgraph Identity["Hybrid Identity"]
         EC[Entra Connect<br/>PHS, OU-scoped]
     end
-
     subgraph LandingZone["Azure Landing Zone — Sweden Central"]
         subgraph NetRG["rg-hybridlab-network-dev"]
             VNET[vnet-hybridlab-dev — 10.0.0.0/16]
@@ -72,21 +84,29 @@ flowchart TB
             WORK[snet-workload-dev]
         end
         subgraph WorkRG["rg-hybridlab-workload-dev"]
-            AKS[AKS — Milestone F]
+            AKS[AKS — aks-hybridlab-dev<br/>Azure CNI Overlay]
+            NGINX[NGINX Ingress Controller]
+            APP[Sample App]
+            AKS --- NGINX
+            NGINX --> APP
         end
         subgraph PlatRG["rg-hybridlab-platform-dev"]
-            KV[Key Vault / ACR / Log Analytics — Milestone G]
+            KV[Key Vault]
+            ACR[Container Registry]
+            LOG[Log Analytics Workspace]
         end
     end
-
     DC -->|sync| EC
     DC -.->|Point-to-Site, on demand| GW
     VNET --- GW
     VNET --- ING
     VNET --- PLAT
     VNET --- WORK
-    WORK -.-> AKS
-    PLAT -.-> KV
+    WORK --> AKS
+    AKS -.->|AcrPull, kubelet identity| ACR
+    AKS -.->|Key Vault Secrets User, kubelet identity| KV
+    AKS -.->|diagnostic setting| LOG
+    INET -->|Public IP, ports 80/443| NGINX
 ```
 
 ## Foundations
@@ -215,12 +235,91 @@ flowchart TB
 ⬆ [Back to top](#english)
 
 ---
+## Milestone F: Workload (AKS)
+
+<a name="milestone-f-workload-aks"></a>
+
+> 💡 With the Landing Zone in place, this milestone put an actual workload behind it — an AKS cluster, a shared ingress layer, and a sample application reachable from the internet.
+
+**Steps performed:**
+- Deployed an AKS cluster (`aks-hybridlab-dev`) through a dedicated Terraform root (`terraform-workload/`) with its own remote state, reading network outputs via `terraform_remote_state`
+- Chose Azure CNI Overlay as the network plugin — pods draw IPs from a separate `10.244.0.0/16` range, avoiding kubenet's upcoming retirement and classic CNI's VNet IP consumption
+- Worked through two real-world provisioning constraints: a subscription-level VM SKU restriction (settled on `Standard_D2s_v3`) and a newly-required `node_provisioning_profile` block, following Node Autoprovisioning reaching GA
+- Deployed NGINX Ingress Controller via Helm (through Terraform's `helm_release` resource), giving the cluster one shared public entry point
+- Deployed the sample application via plain Kubernetes YAML manifests (`kubectl apply`), deliberately outside Terraform — mirrors a realistic platform/application team split
+- Diagnosed and fixed a missing NSG rule that silently blocked all internet traffic to the workload subnet
+- Verified the full request path end-to-end: internet → NSG → Load Balancer → NGINX → Service → Pod
+
+| | |
+|--|--|
+| ![AKS cluster overview in the Azure Portal](screenshots/f01-aks-cluster-overview-portal.png) | ![kubectl get nodes showing the node in Ready state](screenshots/f02-kubectl-get-nodes.png) |
+| *AKS cluster — Portal overview* | *Node verified via kubectl* |
+| ![NGINX Ingress Controller external IP](screenshots/f03-ingress-external-ip.png) | ![Sample app response in the browser](screenshots/f04-sample-app-response.png) |
+| *Ingress Controller — external IP assigned* | *Sample app — reachable end-to-end* |
+
+> 🔑 **Key insight — a network layer built for "nothing yet" doesn't automatically permit something later.** Milestone E deliberately left the workload NSG empty, since there was no backend to protect at the time. Once a real internet-facing service existed, Azure's default-deny rule silently dropped every request (a timeout, not a refusal) until an explicit allow rule was added — a reminder that "empty" infrastructure decisions need revisiting once their preconditions change.
+
+⬆ [Back to top](#english)
+
+---
+## Milestone G: Platform Services
+
+<a name="milestone-g-platform-services"></a>
+
+> 💡 With AKS running a real workload, this milestone filled in the platform-services layer the Landing Zone had reserved space for since Milestone E — secrets management, a private image registry, and centralized logging.
+
+**Steps performed:**
+- Restructured Terraform into three roots grouped under a single `terraform/` parent — `terraform-network/`, `terraform-workload/`, `terraform-platform/` — extending the existing `terraform_remote_state` pattern to a third, independent layer
+- Provisioned Key Vault (RBAC authorization), Container Registry (Basic SKU), and a Log Analytics Workspace in `rg-hybridlab-platform-dev`
+- Granted the AKS kubelet identity `AcrPull` on the registry and `Key Vault Secrets User` on the vault — no stored credentials on either path
+- Forwarded AKS control-plane logs and metrics to Log Analytics via a diagnostic setting
+- Verified ACR access by importing a public image (`az acr import`) and confirming the sample app pulled it using only the kubelet identity
+- Enabled the Key Vault Secrets Store CSI driver add-on and mounted a demo secret into a pod, confirming the identity chain end-to-end
+- Reverted the sample app to its Milestone F state afterward — the ACR/Key Vault wiring was a one-time functional test, not a permanent change to the demo app
+
+| | |
+|--|--|
+| ![Platform resource group overview in the Azure Portal, showing Key Vault, ACR, and Log Analytics](screenshots/g01-platform-services-overview-portal.png) | ![Terminal output showing the demo secret retrieved from inside the pod](screenshots/g02-secret-mounted-in-pod.png) |
+| *Platform services — Portal overview* | *Key Vault secret — mounted and read from inside a pod* |
+
+> 🔑 **Key insight — a managed identity's own auto-created "helper" identity isn't automatically usable the way you'd expect.** Enabling the Key Vault CSI driver add-on creates a dedicated identity for it, but that identity defaulted to a Workload Identity (federated/OIDC) token flow with no federation configured — a `401`/`AADSTS70025` error that had nothing to do with any role assignment. Switching the `SecretProviderClass` to explicit VM Managed Identity mode, using the cluster's existing kubelet identity, resolved it without any extra federation setup.
+
+⬆ [Back to top](#english)
+
+---
+
+## Milestone H: Monitoring
+
+<a name="milestone-h-monitoring"></a>
+
+> 💡 With Container Insights now live on the AKS cluster, this milestone added the observability layer the Landing Zone had left implicit since Milestone F — resource metrics, alerting, and a queryable operational view, built on the Log Analytics workspace from Milestone G.
+
+**Steps performed:**
+- Enabled Container Insights on the AKS cluster via the `oms_agent` block (MSI-based auth, no stored credentials)
+- Manually provisioned a Data Collection Endpoint, Data Collection Rule (`ContainerInsights` extension), and DCR-to-cluster association — the piece Terraform's `oms_agent` resource doesn't create automatically
+- Added an Action Group with an email receiver as the shared alert notification target
+- Created a platform metric alert on node CPU usage (>80% over 5 minutes), independent of the Container Insights pipeline
+- Created a Log Analytics scheduled query alert firing on `CrashLoopBackOff` / `ImagePullBackOff` / `ErrImagePull` pod states
+- Built an Azure Workbook summarizing pod status distribution and node status from the Log Analytics workspace
+
+| | | |
+|--|--|--|
+| ![Container Insights cluster overview in the Azure Portal](screenshots/h01-container-insights-portal.png) | ![Metric alert rule configuration for node CPU](screenshots/h02-metric-alert-portal.png) | ![AKS monitoring workbook showing pod and node status](screenshots/h03-monitoring-workbook.png) |
+| *Container Insights — cluster overview* | *Metric alert — node CPU rule* | *Workbook — pod & node status* |
+
+> 🔑 **Key insight — enabling an agent isn't the same as onboarding it.** Terraform's `oms_agent` block deploys the Container Insights agent pods onto every node, but unlike the `az aks enable-addons monitoring` CLI path, it does not create the Data Collection Endpoint, Data Collection Rule, or their association with the cluster. Without those three resources, the agent runs but has nowhere to send data — no error, just a silent "Not collecting" status until the missing pipeline is added explicitly.
+
+⬆ [Back to top](#english)
+
+---
 
 ## Roadmap
 
-- **Milestone F — Workload:** Deploy AKS into `rg-hybridlab-workload-dev`, run a sample app, connect the deferred ingress resource
-- **Milestone G — Platform Services:** Key Vault, ACR, Log Analytics into `rg-hybridlab-platform-dev`
-- **Milestone H–K — Governance & Extensions:** Monitoring, backup, policy, budget, and optional stretch goals
+## Roadmap
+
+- **Milestone I — Backup:** Recovery strategy for on-prem VM and Azure resources
+- **Milestone J — Policy:** Azure Policy enforcement test and documentation
+- **Milestone K — Budget & Extensions (optional):** Budget alerts, plus CI/CD pipeline and failure simulation as stretch goals
 
 ⬆ [Back to top](#english)
 
@@ -246,9 +345,10 @@ Die wenigsten Unternehmen sind rein "Cloud" oder rein "On-Premises" — bestehen
 | 🔌 | [Milestone C: Hybrid-Konnektivität](#milestone-c-hybrid-konnektivitat) | VNet, GatewaySubnet, Point-to-Site-VPN | ✅ |
 | 🔐 | [Milestone D: Hybrid-Identität](#milestone-d-hybrid-identitat) | Entra Connect, PHS, UPN-Suffix | ✅ |
 | 🏗️ | [Milestone E: Landing Zone](#milestone-e-landing-zone-de) | Resource Groups, VNet-Subnetze, NSGs | ✅ |
-| ☸️ | Milestone F: Workload (AKS) | Beispiel-App auf AKS | ⏳ |
-| 🔑 | Milestone G: Plattform-Dienste | Key Vault, ACR, Log Analytics | ⏳ |
-| 📊 | Milestone H–K: Governance & Erweiterungen | Monitoring, Backup, Policy, Budget | ⏳ |
+| ☸️ | [Milestone F: Workload (AKS)](#milestone-f-workload-aks-de) | AKS, NGINX Ingress, Beispiel-App | ✅ |
+| 🔑 | [Milestone G: Plattform-Dienste](#milestone-g-plattform-dienste-de) | Key Vault, ACR, Log Analytics | ✅ |
+| 📊 | [Milestone H: Monitoring](#milestone-h-monitoring-de) | Container Insights, Alerts, Workbook | ✅ |
+| 💾 | Milestone I–K: Governance & Erweiterungen | Backup, Policy, Budget | ⏳ |
 
 ## 🏗️ Infrastruktur-Übersicht
 
@@ -258,11 +358,23 @@ Die wenigsten Unternehmen sind rein "Cloud" oder rein "On-Premises" — bestehen
 | AD-Forest / Domäne | hybridlab.local | NetBIOS `HYBRIDLAB`, OU `HybridLab-Staff` |
 | Hybrid-Identitätssynchronisation | Microsoft Entra Connect | Password Hash Sync, OU-eingeschränkt |
 | Resource Group (Network) | `rg-hybridlab-network-dev` | Sweden Central |
-| Resource Group (Workload) | `rg-hybridlab-workload-dev` | Sweden Central, leer — Milestone F ausstehend |
+| Resource Group (Workload) | `rg-hybridlab-workload-dev` | Sweden Central — AKS-Cluster bereitgestellt |
+| AKS-Cluster | `aks-hybridlab-dev` | Azure CNI Overlay, 1× `Standard_D2s_v3`-Node, manuelles Node Provisioning |
+| Ingress | NGINX Ingress Controller | Per Helm bereitgestellt, ein gemeinsamer öffentlicher IP |
+| Terraform-State (Workload) | `terraform-workload/` | Eigener State (`workload-dev.tfstate`), liest Netzwerk-Outputs via `terraform_remote_state` |
 | Resource Group (Platform) | `rg-hybridlab-platform-dev` | Sweden Central, leer — Milestone G ausstehend |
 | Virtual Network | `vnet-hybridlab-dev` | `10.0.0.0/16` |
 | Subnetze | GatewaySubnet · snet-ingress-dev · snet-platform-dev · snet-workload-dev | `10.0.255.0/27` · `10.0.0.0/24` · `10.0.1.0/24` · `10.0.16.0/20` |
 | Network Security Groups | nsg-ingress-dev · nsg-platform-dev · nsg-workload-dev | Je 1:1 mit funktionalem Subnetz |
+| Resource Group (Platform) | `rg-hybridlab-platform-dev` | Sweden Central — Key Vault, ACR, Log Analytics bereitgestellt |
+| Key Vault | `kv-hybridlab-dev-<suffix>` | RBAC-Autorisierung, öffentlicher Netzwerkzugriff |
+| Container Registry | `acrhybridlabdev<suffix>` | Basic SKU, Zugriff per Managed Identity (keine Admin-Zugangsdaten) |
+| Log Analytics Workspace | `log-hybridlab-dev` | PerGB2018, 30 Tage Aufbewahrung — empfängt AKS-Diagnosedaten |
+| Terraform-State (Platform) | `terraform/terraform-platform/` | Eigener State (`platform-dev.tfstate`), liest Network- + Workload-Outputs |
+| Container Insights | `oms_agent` auf AKS | MSI-basierte Auth, Data Collection Rule + Endpoint an Log Analytics angebunden |
+| Monitor Action Group | `ag-hybridlab-dev` | E-Mail-Empfänger, gemeinsames Ziel für beide Alert-Regeln |
+| Alerts | `alert-aks-node-cpu-dev` · `alert-aks-pod-failures-dev` | Platform-Metric-Alert (Node-CPU) + Log-Analytics-Scheduled-Query-Alert (Pod-Fehler) |
+| Workbook | AKS Monitoring - hybridlab-dev | Pod-Statusverteilung, Node-Status — aus Log Analytics |
 
 > Das Architekturdiagramm im englischen Abschnitt oben gilt sprachübergreifend — Azure-Ressourcennamen bleiben ohnehin auf Englisch.
 
@@ -392,12 +504,88 @@ Die wenigsten Unternehmen sind rein "Cloud" oder rein "On-Premises" — bestehen
 ⬆ [Nach oben](#deutsch)
 
 ---
+## Milestone F: Workload (AKS)
 
+<a name="milestone-f-workload-aks-de"></a>
+
+> 💡 Mit der Landing Zone an Ort und Stelle brachte dieser Milestone eine echte Workload dahinter — einen AKS-Cluster, eine gemeinsame Ingress-Schicht und eine aus dem Internet erreichbare Beispielanwendung.
+
+**Durchgeführte Schritte:**
+- AKS-Cluster (`aks-hybridlab-dev`) über eine eigene Terraform-Root (`terraform-workload/`) mit eigenem Remote State bereitgestellt, Netzwerk-Outputs per `terraform_remote_state` eingelesen
+- Azure CNI Overlay als Netzwerk-Plugin gewählt — Pods beziehen IPs aus einem separaten `10.244.0.0/16`-Bereich, umgeht die bevorstehende Kubenet-Abschaltung und den VNet-IP-Verbrauch des klassischen CNI
+- Zwei reale Einschränkungen bei der Bereitstellung gelöst: eine Subscription-seitige VM-SKU-Beschränkung (Lösung: `Standard_D2s_v3`) und einen neu verpflichtenden `node_provisioning_profile`-Block, nachdem Node Autoprovisioning GA wurde
+- NGINX Ingress Controller per Helm bereitgestellt (über Terraforms `helm_release`-Ressource) — ein einzelner, gemeinsamer öffentlicher Einstiegspunkt für den Cluster
+- Beispielanwendung über reine Kubernetes-YAML-Manifeste bereitgestellt (`kubectl apply`), bewusst außerhalb von Terraform — spiegelt eine realistische Trennung zwischen Plattform- und Anwendungsteam
+- Eine fehlende NSG-Regel diagnostiziert und behoben, die sämtlichen Internet-Traffic zum Workload-Subnetz stillschweigend blockierte
+- Den gesamten Anfrageweg Ende-zu-Ende verifiziert: Internet → NSG → Load Balancer → NGINX → Service → Pod
+
+| | |
+|--|--|
+| ![AKS-Cluster-Übersicht im Azure Portal](screenshots/f01-aks-cluster-overview-portal.png) | ![kubectl get nodes mit Node im Ready-Status](screenshots/f02-kubectl-get-nodes.png) |
+| *AKS-Cluster — Portal-Übersicht* | *Node per kubectl verifiziert* |
+| ![Externe IP des NGINX Ingress Controllers](screenshots/f03-ingress-external-ip.png) | ![Antwort der Beispiel-App im Browser](screenshots/f04-sample-app-response.png) |
+| *Ingress Controller — externe IP zugewiesen* | *Beispiel-App — Ende-zu-Ende erreichbar* |
+
+> 🔑 **Erkenntnis — eine Netzwerkebene, die für "noch nichts" gebaut wurde, erlaubt nicht automatisch "etwas" später.** Milestone E ließ die Workload-NSG bewusst leer, da es zu dem Zeitpunkt noch kein zu schützendes Backend gab. Sobald ein echter, internetseitig erreichbarer Dienst existierte, verwarf Azures Standard-Deny-Regel jede Anfrage stillschweigend (ein Timeout, keine Ablehnung) — bis eine explizite Allow-Regel ergänzt wurde. Eine Erinnerung, dass "leere" Infrastrukturentscheidungen überprüft werden müssen, sobald sich ihre Voraussetzungen ändern.
+
+⬆ [Nach oben](#deutsch)
+
+---
+## Milestone G: Plattform-Dienste
+
+<a name="milestone-g-plattform-dienste-de"></a>
+
+> 💡 Mit einer echten Workload auf AKS füllte dieser Milestone die Plattform-Dienste-Schicht, für die seit Milestone E bereits Platz reserviert war — Secret-Verwaltung, eine private Image-Registry und zentrales Logging.
+
+**Durchgeführte Schritte:**
+- Terraform in drei Roots unter einem gemeinsamen `terraform/`-Elternordner umstrukturiert — `terraform-network/`, `terraform-workload/`, `terraform-platform/` — bestehendes `terraform_remote_state`-Muster auf eine dritte, unabhängige Schicht erweitert
+- Key Vault (RBAC-Autorisierung), Container Registry (Basic SKU) und einen Log Analytics Workspace in `rg-hybridlab-platform-dev` bereitgestellt
+- AKS-Kubelet-Identity `AcrPull` auf der Registry und `Key Vault Secrets User` auf dem Vault zugewiesen — auf beiden Wegen keine gespeicherten Zugangsdaten
+- AKS-Control-Plane-Logs und -Metriken per Diagnostic Setting an Log Analytics weitergeleitet
+- ACR-Zugriff verifiziert durch Import eines öffentlichen Images (`az acr import`) und Bestätigung, dass die Beispiel-App es allein über die Kubelet-Identity zog
+- Key-Vault-CSI-Driver-Add-on aktiviert und ein Demo-Secret in einen Pod gemountet, Identitätskette Ende-zu-Ende bestätigt
+- Beispiel-App danach auf den Milestone-F-Stand zurückgesetzt — die ACR-/Key-Vault-Anbindung war ein einmaliger Funktionstest, keine dauerhafte Änderung an der Demo-App
+
+| | |
+|--|--|
+| ![Übersicht der Platform-Resource-Group im Azure Portal mit Key Vault, ACR und Log Analytics](screenshots/g01-platform-services-overview-portal.png) | ![Terminal-Ausgabe mit dem aus dem Pod ausgelesenen Demo-Secret](screenshots/g02-secret-mounted-in-pod.png) |
+| *Plattform-Dienste — Portal-Übersicht* | *Key-Vault-Secret — gemountet und aus einem Pod ausgelesen* |
+
+> 🔑 **Erkenntnis — die automatisch erzeugte "Hilfs-Identity" einer Managed Identity ist nicht automatisch so nutzbar wie erwartet.** Das Aktivieren des Key-Vault-CSI-Driver-Add-ons erzeugt eine eigene Identity dafür, die aber standardmäßig einen Workload-Identity-(federated/OIDC-)Token-Flow ohne konfigurierte Föderation nutzte — ein `401`/`AADSTS70025`-Fehler, der nichts mit einer Rollenzuweisung zu tun hatte. Das Umstellen der `SecretProviderClass` auf expliziten VM-Managed-Identity-Modus, unter Nutzung der bereits vorhandenen Kubelet-Identity des Clusters, löste das Problem ohne zusätzliche Föderationskonfiguration.
+
+⬆ [Nach oben](#deutsch)
+
+---
+
+## Milestone H: Monitoring
+
+<a name="milestone-h-monitoring-de"></a>
+
+> 💡 Mit aktiviertem Container Insights auf dem AKS-Cluster ergänzte dieser Meilenstein die Beobachtbarkeits-Ebene, die seit Milestone F implizit blieb — Ressourcenmetriken, Alerting und eine abfragbare Betriebssicht, aufbauend auf dem Log-Analytics-Workspace aus Milestone G.
+
+**Durchgeführte Schritte:**
+- Container Insights auf dem AKS-Cluster über den `oms_agent`-Block aktiviert (MSI-basierte Authentifizierung, keine gespeicherten Zugangsdaten)
+- Data Collection Endpoint, Data Collection Rule (`ContainerInsights`-Extension) und DCR-Cluster-Verknüpfung manuell bereitgestellt — der Teil, den Terraforms `oms_agent`-Ressource nicht automatisch erstellt
+- Action Group mit E-Mail-Empfänger als gemeinsames Alert-Ziel hinzugefügt
+- Platform-Metric-Alert für Node-CPU-Auslastung erstellt (>80 % über 5 Minuten), unabhängig von der Container-Insights-Pipeline
+- Log-Analytics-Scheduled-Query-Alert erstellt, der bei `CrashLoopBackOff` / `ImagePullBackOff` / `ErrImagePull` auslöst
+- Azure Workbook mit Pod-Status-Verteilung und Node-Status aus dem Log-Analytics-Workspace erstellt
+
+| | | |
+|--|--|--|
+| ![Container-Insights-Cluster-Übersicht im Azure Portal](screenshots/h01-container-insights-portal.png) | ![Metric-Alert-Regel für Node-CPU](screenshots/h02-metric-alert-portal.png) | ![AKS-Monitoring-Workbook mit Pod- und Node-Status](screenshots/h03-monitoring-workbook.png) |
+| *Container Insights — Cluster-Übersicht* | *Metric Alert — Node-CPU-Regel* | *Workbook — Pod- & Node-Status* |
+
+> 🔑 **Erkenntnis — einen Agenten zu aktivieren heißt nicht, ihn ans System anzubinden.** Der `oms_agent`-Block installiert die Container-Insights-Agent-Pods auf jedem Node, erstellt aber — anders als der CLI-Pfad `az aks enable-addons monitoring` — weder Data Collection Endpoint noch Data Collection Rule noch deren Verknüpfung mit dem Cluster. Ohne diese drei Ressourcen läuft der Agent, hat aber kein Ziel für seine Daten — kein Fehler, nur ein stiller "Not collecting"-Status, bis die fehlende Pipeline explizit ergänzt wird.
+
+⬆ [Nach oben](#deutsch)
+
+---
 ## Roadmap
 
-- **Milestone F — Workload:** AKS in `rg-hybridlab-workload-dev` bereitstellen, Beispiel-App betreiben, zurückgestellte Ingress-Ressource anbinden
-- **Milestone G — Plattform-Dienste:** Key Vault, ACR, Log Analytics in `rg-hybridlab-platform-dev`
-- **Milestone H–K — Governance & Erweiterungen:** Monitoring, Backup, Policy, Budget sowie optionale Erweiterungsziele
+- **Milestone I — Backup:** Recovery-Strategie für On-Prem-VM und Azure-Ressourcen
+- **Milestone J — Policy:** Test und Dokumentation einer Azure-Policy-Durchsetzung
+- **Milestone K — Budget & Erweiterungen (optional):** Budget-Alerts sowie CI/CD-Pipeline und Ausfallsimulation als optionale Erweiterungsziele
 
 ⬆ [Nach oben](#deutsch)
 
@@ -412,6 +600,12 @@ Die wenigsten Unternehmen sind rein "Cloud" oder rein "On-Premises" — bestehen
 | 3 | 🔌 Die Realität des Heimnetzwerks kann den Lehrbuch-Plan überstimmen | DS-Lite erzwang den Wechsel von Site-to-Site zu Point-to-Site |
 | 4 | 🔐 Domänenname ≠ cloud-verifizierbare Identität | Alternatives UPN-Suffix behebt die Anmeldung, ohne die Domäne umzubenennen |
 | 5 | 🏗️ `for_each` macht aus Wiederholung eine einzige Quelle der Wahrheit | Eine Map-Variable steuert Subnetze, NSGs und Assoziationen gemeinsam |
+| 6 | ☸️ Ein Netzwerk-Plugin ist eine permanente Entscheidung | Azure CNI Overlay musste vor dem Cluster-Bau feststehen — Änderung erfordert Neuerstellung |
+| 7 | 🔐 Standard-Deny gilt auch für noch ungenutzte Subnetze | Eine leere NSG blockiert stillschweigend, sobald ein echter Dienst dahinter erscheint |
+| 8 | 🔐 Subscription-Rollen ≠ Key-Vault-Datenebenen-Zugriff | RBAC-aktivierte Key Vaults brauchen eine eigene Datenebenen-Rolle (z. B. Secrets Officer), unabhängig von Owner/Contributor |
+| 9 | 🔑 Eine Add-on-eigene Identity ist nicht automatisch die richtige | CSI-Driver-Add-on-Identity nutzte standardmäßig Workload-Identity-Föderation — VM Managed Identity (Kubelet) war der einfachere, funktionierende Pfad |
+| 10 | 📊 Ein Agent zu aktivieren heißt nicht, ihn zu onboarden | `oms_agent` installiert die Agent-Pods, aber DCE/DCR/Association müssen bei Terraform-Deployments manuell ergänzt werden |
+| 11 | 🔔 Zwei Alert-Typen decken zwei Fehlerebenen ab | Platform-Metric-Alerts sind unabhängig von der Log-Pipeline; Log-based Alerts benötigen die volle Container-Insights-Kette |
 
 ## 🛠️ Tools & Services
 
@@ -424,6 +618,13 @@ Die wenigsten Unternehmen sind rein "Cloud" oder rein "On-Premises" — bestehen
 ![Active Directory](https://img.shields.io/badge/Active_Directory-0078D4?style=flat-square&logo=microsoft&logoColor=white)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5391FE?style=flat-square&logo=powershell&logoColor=white)
 ![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-0F1689?style=flat-square&logo=helm&logoColor=white)
+![NGINX](https://img.shields.io/badge/NGINX_Ingress-009639?style=flat-square&logo=nginx&logoColor=white)
+![Azure Key Vault](https://img.shields.io/badge/Azure_Key_Vault-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Azure Container Registry](https://img.shields.io/badge/Azure_Container_Registry-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Log Analytics](https://img.shields.io/badge/Log_Analytics-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Azure Monitor](https://img.shields.io/badge/Azure_Monitor-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
 
 ## 📁 Repository-Struktur
 
@@ -434,28 +635,59 @@ hybrid-azure-infrastructure/
 ├── docs/
 │   └── Abschlussprojekt_Hybrid_Infrastruktur.pdf
 ├── screenshots/
-│   ├── b-ad-ou-user-structure.png
-│   ├── b-dhcp-role-configured.png
-│   ├── b-domain-controller-verification.png
-│   ├── c-network-terraform-apply.png
-│   ├── c-vpn-gateway-review-create.png
-│   ├── c-p2s-vpn-configuration.png
-│   ├── c-p2s-vpn-connected.png
-│   ├── d-entra-connect-sync-status.png
-│   ├── d-entra-id-users-synced.png
-│   ├── d-hybrid-signin-success.png
-│   └── e-subnets-nsg-overview.png
+│
+├── k8s/
+│   └── sample-app/
+│       ├── 00-namespace.yaml
+│       ├── 01-deployment.yaml
+│       ├── 02-service.yaml
+│       ├── 03-ingress.yaml
+│       └── 04-secretproviderclass.yaml
 └── terraform/
-    ├── main.tf
-    ├── variables.tf
-    ├── versions.tf
-    ├── env/
-    │   └── dev.tfvars
-    └── modules/
-        └── network/
-            ├── main.tf
-            ├── variables.tf
-            └── outputs.tf
+    ├── terraform-network/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   ├── versions.tf
+    │   ├── env/
+    │   │   └── dev.tfvars
+    │   └── modules/
+    │       └── network/
+    │           ├── main.tf
+    │           ├── variables.tf
+    │           └── outputs.tf
+    ├── terraform-workload/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   ├── versions.tf
+    │   ├── env/
+    │   │   └── dev.tfvars
+    │   └── modules/
+    │       └── aks/
+    │           ├── main.tf
+    │           ├── variables.tf
+    │           └── outputs.tf
+    └── terraform-platform/
+        ├── main.tf
+        ├── variables.tf
+        ├── outputs.tf
+        ├── versions.tf
+        ├── env/
+        │   └── dev.tfvars
+        └── modules/
+            ├── keyvault/
+            │   ├── main.tf
+            │   ├── variables.tf
+            │   └── outputs.tf
+            ├── acr/
+            │   ├── main.tf
+            │   ├── variables.tf
+            │   └── outputs.tf
+            └── log_analytics/
+                ├── main.tf
+                ├── variables.tf
+                └── outputs.tf
 ```
 
 ---
