@@ -17,6 +17,6 @@ spec:
     spec:
       containers:
         - name: sample-app
-          image: nginxdemos/hello:latest
+          image: nacrhybridlabdev7a1w.azurecr.io/hybridlab-app:latest
           ports:
             - containerPort: 80
