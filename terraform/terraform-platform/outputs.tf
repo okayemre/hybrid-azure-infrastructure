@@ -17,3 +17,18 @@ output "key_vault_secret_name" {
   value       = azurerm_key_vault_secret.demo.name
   description = "Name of the demo secret stored in Key Vault, referenced by the SecretProviderClass manifest"
 }
+
+output "github_actions_client_id" {
+  value       = azuread_application.github_actions.client_id
+  description = "Client ID of the GitHub Actions App Registration, used for OIDC login in the CI/CD workflow"
+}
+
+output "github_actions_tenant_id" {
+  value       = data.azurerm_client_config.current.tenant_id
+  description = "Azure AD tenant ID, used for OIDC login in the CI/CD workflow"
+}
+
+output "azure_subscription_id" {
+  value       = data.azurerm_client_config.current.subscription_id
+  description = "Azure subscription ID, used for OIDC login in the CI/CD workflow"
+}

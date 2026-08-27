@@ -342,3 +342,79 @@ resource "azurerm_resource_group_policy_assignment" "require_project_tag" {
     }
   })
 }
+
+resource "azuread_application" "github_actions" {
+  display_name = "hybridlab-github-actions-dev"
+  owners       = [data.azurerm_client_config.current.object_id]
+}
+
+resource "azuread_service_principal" "github_actions" {
+  client_id = azuread_application.github_actions.client_id
+  owners    = [data.azurerm_client_config.current.object_id]
+}
+
+resource "azuread_application_federated_identity_credential" "github_main" {
+  application_id = azuread_application.github_actions.id
+  display_name   = "github-actions-main-branch"
+  description    = "Allows GitHub Actions workflows on the main branch to authenticate via OIDC, without a stored secret"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://token.actions.githubusercontent.com"
+  subject        = "repo:okayemre/hybrid-azure-infrastructure:ref:refs/heads/main"
+}
+
+resource "azuread_application_federated_identity_credential" "github_main_immutable" {
+  application_id = azuread_application.github_actions.id
+  display_name   = "github-actions-main-branch-immutable-id"
+  description    = "Matches GitHub's newer immutable-ID OIDC subject format (numeric org/repo IDs), in effect for repos created after July 2026"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://token.actions.githubusercontent.com"
+  subject        = "repo:okayemre@107372052/hybrid-azure-infrastructure@1345423705:ref:refs/heads/main"
+}
+
+resource "azurerm_role_assignment" "github_actions_acr_push" {
+  scope                = module.acr.id
+  role_definition_name = "AcrPush"
+  principal_id         = azuread_service_principal.github_actions.object_id
+}
+
+resource "azurerm_role_assignment" "github_actions_aks_admin" {
+  scope                = data.terraform_remote_state.workload.outputs.cluster_id
+  role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
+  principal_id         = azuread_service_principal.github_actions.object_id
+}
+
+data "azurerm_subscription" "current" {}
+
+resource "azurerm_consumption_budget_subscription" "hybridlab" {
+  name            = "budget-hybridlab-dev"
+  subscription_id = data.azurerm_subscription.current.id
+  amount          = 20
+  time_grain      = "Monthly"
+
+  time_period {
+    start_date = "2026-08-01T00:00:00Z"
+    end_date   = "2027-08-01T00:00:00Z"
+  }
+
+  filter {
+    tag {
+      name   = "project"
+      values = ["hybridlab"]
+    }
+  }
+
+  notification {
+    enabled        = true
+    threshold      = 80
+    operator       = "GreaterThanOrEqualTo"
+    contact_emails = [var.alert_email]
+  }
+
+  notification {
+    enabled        = true
+    threshold      = 100
+    operator       = "GreaterThanOrEqualTo"
+    threshold_type = "Forecasted"
+    contact_emails = [var.alert_email]
+  }
+}
