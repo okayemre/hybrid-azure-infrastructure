@@ -218,3 +218,27 @@ the **why**, not just the **what**.
 - ✅ **Decision:** Forward `kube-apiserver` and `kube-controller-manager` logs, plus `AllMetrics`, from AKS to the Log Analytics Workspace.
 - 🧠 **Context:** These categories cover control-plane visibility without enabling every available category, keeping ingestion volume (and cost) predictable for a lab environment.
 - ⚠️ **Trade-off:** Data-plane logs (e.g. `kube-audit`) aren't collected — sufficient for demonstrating the pipeline, not for full audit compliance.
+
+### Container Insights enablement path
+- ✅ **Decision:** Enabled AKS Container Insights via Terraform's `oms_agent` block, using MSI-based authentication.
+- 🧠 **Context:** Node- and pod-level metrics were needed beyond the control-plane diagnostic logs already forwarded to Log Analytics.
+- ⚠️ **Trade-off:** `oms_agent` deploys the agent pods but doesn't provision the Data Collection Rule the agent needs to send data anywhere — a gap the `az aks enable-addons monitoring` CLI path fills automatically but the raw Terraform resource does not.
+
+### Manual Data Collection Rule pipeline
+- ✅ **Decision:** Manually provisioned a Data Collection Endpoint, Data Collection Rule (`ContainerInsights` extension), and DCR-to-cluster association.
+- 🧠 **Context:** Confirmed missing only after the Container Insights agent logged a silent onboarding failure — pods ran, but no data reached Log Analytics with no visible error in the Portal.
+- ⚠️ **Trade-off:** Three extra resources to maintain instead of one CLI flag — more explicit, but more moving parts.
+
+### Two-tier alerting: platform metric vs. log-based
+- ✅ **Decision:** Split alerting into a platform metric alert (node CPU) and a Log Analytics scheduled query alert (pod failure states), sharing one Action Group.
+- 🧠 **Context:** Metric alerts run independently of the Container Insights pipeline; log-based alerts depend on it — together they cover infrastructure- and application-level failures through separate paths, so one pipeline being down doesn't blind both.
+- ⚠️ **Trade-off:** Two alerting mechanisms with different evaluation models (metric aggregation vs. KQL query count) to reason about, instead of one.
+
+---
+
+## 💰 Cost
+
+### Alert rule set kept minimal
+- ✅ **Decision:** Limited Milestone H alerting to one platform metric alert and one log-based alert, rather than a broader rule set.
+- 🧠 **Context:** Each scheduled query rule carries a small ongoing cost; the goal was meaningful failure coverage for a lab environment, not exhaustive alerting.
+- ⚠️ **Trade-off:** Narrower failure detection than a production environment would use.
