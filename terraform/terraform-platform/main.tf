@@ -417,4 +417,11 @@ resource "azurerm_consumption_budget_subscription" "hybridlab" {
     threshold_type = "Forecasted"
     contact_emails = [var.alert_email]
   }
+
+  notification {
+    enabled        = true
+    threshold      = 10
+    operator       = "GreaterThanOrEqualTo"
+    contact_emails = [var.alert_email]
+  }
 }

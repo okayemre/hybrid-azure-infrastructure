@@ -6,6 +6,27 @@
 ![Entra ID](https://img.shields.io/badge/Microsoft_Entra_ID-0078D4?style=for-the-badge&logo=microsoft-azure&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen?style=for-the-badge)
 
+## 🛠️ Tools & Services
+
+![Windows Server](https://img.shields.io/badge/Windows_Server_2025-0078D4?style=flat-square&logo=windows&logoColor=white)
+![VMware](https://img.shields.io/badge/VMware_Workstation-607078?style=flat-square&logo=vmware&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=flat-square&logo=terraform&logoColor=white)
+![Azure Portal](https://img.shields.io/badge/Azure_Portal-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Entra ID](https://img.shields.io/badge/Microsoft_Entra_ID-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Virtual Network](https://img.shields.io/badge/Virtual_Network-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Active Directory](https://img.shields.io/badge/Active_Directory-0078D4?style=flat-square&logo=microsoft&logoColor=white)
+![PowerShell](https://img.shields.io/badge/PowerShell-5391FE?style=flat-square&logo=powershell&logoColor=white)
+![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-0F1689?style=flat-square&logo=helm&logoColor=white)
+![NGINX](https://img.shields.io/badge/NGINX_Ingress-009639?style=flat-square&logo=nginx&logoColor=white)
+![Azure Key Vault](https://img.shields.io/badge/Azure_Key_Vault-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Azure Container Registry](https://img.shields.io/badge/Azure_Container_Registry-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Log Analytics](https://img.shields.io/badge/Log_Analytics-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Azure Monitor](https://img.shields.io/badge/Azure_Monitor-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+
 ---
 
 **[English](#english)** &nbsp;·&nbsp; **[Deutsch](#deutsch)**
@@ -424,6 +445,100 @@ _VNet subnets — GatewaySubnet plus three functional subnets, each with its own
 
 ---
 
+## 🧠 Key Takeaways
+
+| #   | Insight                                                           | Why it matters                                                                                                                                              |
+| --- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 🧱 Provider version drift causes silent conflicts                 | Course material vs. pinned `azurerm ~> 5.1.0` — always verify against current docs                                                                          |
+| 2   | 🖥️ AD DS promotion installs DNS automatically                     | Still needs explicit verification after installation                                                                                                        |
+| 3   | 🔌 Home-network reality can overrule the textbook plan            | DS-Lite forced the switch from Site-to-Site to Point-to-Site                                                                                                |
+| 4   | 🔐 Domain name ≠ cloud-verifiable identity                        | An alternate UPN suffix fixes sign-in without renaming the domain                                                                                           |
+| 5   | 🏗️ `for_each` turns repetition into a single source of truth      | One map variable drives subnets, NSGs, and associations together                                                                                            |
+| 6   | ☸️ A network plugin is a permanent decision                       | Azure CNI Overlay had to be settled before building the cluster — changing it means rebuilding                                                              |
+| 7   | 🔐 Default-deny still applies to subnets with nothing in them yet | An empty NSG silently blocks traffic the moment a real service appears behind it                                                                            |
+| 8   | 🔐 Subscription roles ≠ Key Vault data-plane access               | RBAC-enabled Key Vaults need their own data-plane role (e.g. Secrets Officer), independent of Owner/Contributor                                             |
+| 9   | 🔑 An add-on's own identity isn't automatically the right one     | The CSI driver add-on identity defaulted to Workload Identity federation — VM Managed Identity (kubelet) was the simpler, working path                      |
+| 10  | 📊 Enabling an agent isn't the same as onboarding it              | `oms_agent` installs the agent pods, but DCE/DCR/association must be added manually in Terraform deployments                                                |
+| 11  | 🔔 Two alert types cover two failure layers                       | Platform metric alerts are independent of the log pipeline; log-based alerts need the full Container Insights chain                                         |
+| 12  | 💾 Versioning changes what "undelete" means                       | With versioning and soft-delete both active, you promote a version instead of getting a blob "undeleted"                                                    |
+| 13  | 🛡️ Two different errors can look identical                        | `RequestDisallowedByAzure` (subscription region list) vs. `RequestDisallowedByPolicy` (this project's own policy) — the error code is what tells them apart |
+| 14  | 🧩 Even a "solved" problem can shift under you                    | GitHub's OIDC subject format changed for new repos in July 2026 — the standard documentation hadn't caught up yet                                           |
+
+## 📁 Repository Structure
+
+```
+hybrid-azure-infrastructure/
+├── README.md
+├── project-decisions.md
+├── docs/
+│   ├── Abschlussprojekt_Hybrid_Infrastruktur.pdf
+│   └── architecture-overview.svg
+├── screenshots/
+│
+├── app/
+│   ├── index.html
+│   └── Dockerfile
+├── .github/
+│   └── workflows/
+│       └── deploy.yml
+├── k8s/
+│   └── sample-app/
+│       ├── 00-namespace.yaml
+│       ├── 01-deployment.yaml
+│       ├── 02-service.yaml
+│       ├── 03-ingress.yaml
+│       └── 04-secretproviderclass.yaml
+└── terraform/
+    ├── terraform-network/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   ├── versions.tf
+    │   ├── env/
+    │   │   └── dev.tfvars
+    │   └── modules/
+    │       └── network/
+    │           ├── main.tf
+    │           ├── variables.tf
+    │           └── outputs.tf
+    ├── terraform-workload/
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   ├── versions.tf
+    │   ├── env/
+    │   │   └── dev.tfvars
+    │   └── modules/
+    │       └── aks/
+    │           ├── main.tf
+    │           ├── variables.tf
+    │           └── outputs.tf
+    └── terraform-platform/
+        ├── main.tf
+        ├── variables.tf
+        ├── outputs.tf
+        ├── versions.tf
+        ├── env/
+        │   └── dev.tfvars
+        └── modules/
+            ├── keyvault/
+            │   ├── main.tf
+            │   ├── variables.tf
+            │   └── outputs.tf
+            ├── acr/
+            │   ├── main.tf
+            │   ├── variables.tf
+            │   └── outputs.tf
+            └── log_analytics/
+                ├── main.tf
+                ├── variables.tf
+                └── outputs.tf
+```
+
+⬆ [Back to top](#english)
+
+---
+
 <a name="deutsch"></a>
 
 # Deutsch
@@ -480,7 +595,7 @@ Die wenigsten Unternehmen sind rein "Cloud" oder rein "On-Premises" — bestehen
 | GitHub-Actions-Identität         | App Registration + Federated Credential                                  | OIDC-basiert, kein gespeichertes Secret; `AcrPush`- und AKS-Cluster-Admin-Rolle                   |
 | Consumption Budget               | `budget-hybridlab-dev`                                                   | Subscription-weit, gefiltert auf `project = hybridlab`, 20 $/Monat                                |
 
-> Das Architekturdiagramm im englischen Abschnitt oben gilt sprachübergreifend — Azure-Ressourcennamen bleiben ohnehin auf Englisch.
+> Das Architekturdiagramm, die Tools-&-Services-Übersicht und die Repository-Struktur im englischen Abschnitt oben gelten sprachübergreifend — Azure-Ressourcennamen und Dateipfade bleiben ohnehin auf Englisch.
 
 ## Grundlagen
 
@@ -790,98 +905,6 @@ _VNet-Subnetze — GatewaySubnet plus drei funktionale Subnetze, jeweils mit eig
 | 12  | 💾 Versionierung verändert, was „Undelete" bedeutet                   | Bei gleichzeitig aktiver Versionierung und Soft-Delete promotet man eine Version, statt einen Blob „undeleted" zu bekommen                            |
 | 13  | 🛡️ Zwei unterschiedliche Fehler können identisch wirken               | `RequestDisallowedByAzure` (Subscription-Regionsliste) vs. `RequestDisallowedByPolicy` (eigene Policy) — der Fehlercode entscheidet                   |
 | 14  | 🧩 Auch ein „gelöstes" Problem kann sich verändern                    | GitHubs OIDC-Subject-Format änderte sich im Juli 2026 für neue Repos — die Standarddokumentation hinkte hinterher                                     |
-
-## 🛠️ Tools & Services
-
-![Windows Server](https://img.shields.io/badge/Windows_Server_2025-0078D4?style=flat-square&logo=windows&logoColor=white)
-![VMware](https://img.shields.io/badge/VMware_Workstation-607078?style=flat-square&logo=vmware&logoColor=white)
-![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=flat-square&logo=terraform&logoColor=white)
-![Azure Portal](https://img.shields.io/badge/Azure_Portal-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![Entra ID](https://img.shields.io/badge/Microsoft_Entra_ID-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![Virtual Network](https://img.shields.io/badge/Virtual_Network-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![Active Directory](https://img.shields.io/badge/Active_Directory-0078D4?style=flat-square&logo=microsoft&logoColor=white)
-![PowerShell](https://img.shields.io/badge/PowerShell-5391FE?style=flat-square&logo=powershell&logoColor=white)
-![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
-![Helm](https://img.shields.io/badge/Helm-0F1689?style=flat-square&logo=helm&logoColor=white)
-![NGINX](https://img.shields.io/badge/NGINX_Ingress-009639?style=flat-square&logo=nginx&logoColor=white)
-![Azure Key Vault](https://img.shields.io/badge/Azure_Key_Vault-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![Azure Container Registry](https://img.shields.io/badge/Azure_Container_Registry-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![Log Analytics](https://img.shields.io/badge/Log_Analytics-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![Azure Monitor](https://img.shields.io/badge/Azure_Monitor-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
-![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
-
-## 📁 Repository-Struktur
-
-```
-hybrid-azure-infrastructure/
-├── README.md
-├── project-decisions.md
-├── docs/
-│   ├── Abschlussprojekt_Hybrid_Infrastruktur.pdf
-│   └── architecture-overview.svg
-├── screenshots/
-│
-├── app/
-│   ├── index.html
-│   └── Dockerfile
-├── .github/
-│   └── workflows/
-│       └── deploy.yml
-├── k8s/
-│   └── sample-app/
-│       ├── 00-namespace.yaml
-│       ├── 01-deployment.yaml
-│       ├── 02-service.yaml
-│       ├── 03-ingress.yaml
-│       └── 04-secretproviderclass.yaml
-└── terraform/
-    ├── terraform-network/
-    │   ├── main.tf
-    │   ├── variables.tf
-    │   ├── outputs.tf
-    │   ├── versions.tf
-    │   ├── env/
-    │   │   └── dev.tfvars
-    │   └── modules/
-    │       └── network/
-    │           ├── main.tf
-    │           ├── variables.tf
-    │           └── outputs.tf
-    ├── terraform-workload/
-    │   ├── main.tf
-    │   ├── variables.tf
-    │   ├── outputs.tf
-    │   ├── versions.tf
-    │   ├── env/
-    │   │   └── dev.tfvars
-    │   └── modules/
-    │       └── aks/
-    │           ├── main.tf
-    │           ├── variables.tf
-    │           └── outputs.tf
-    └── terraform-platform/
-        ├── main.tf
-        ├── variables.tf
-        ├── outputs.tf
-        ├── versions.tf
-        ├── env/
-        │   └── dev.tfvars
-        └── modules/
-            ├── keyvault/
-            │   ├── main.tf
-            │   ├── variables.tf
-            │   └── outputs.tf
-            ├── acr/
-            │   ├── main.tf
-            │   ├── variables.tf
-            │   └── outputs.tf
-            └── log_analytics/
-                ├── main.tf
-                ├── variables.tf
-                └── outputs.tf
-```
 
 ---
 
